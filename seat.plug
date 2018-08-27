@@ -1,0 +1,9 @@
+[Core]
+Name = seat
+Module = seat
+
+[Python]
+Version = 3
+
+[Documentation]
+Description = Let Errbot interface to eve seat api
