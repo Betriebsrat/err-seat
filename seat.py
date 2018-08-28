@@ -13,6 +13,7 @@ class Seat(BotPlugin):
         self.logger = logging
         self.seat_headers = {
             'X-Token': self.config['SEAT_TOKEN'], 'Accept': 'application/json'}
+
         if self.config['CHECK_STRUCTURES']:
             self.start_poller(3600, self._poller_pos_check)
             self.start_poller(3600, self._poller_pos_clear_warnings)
@@ -20,10 +21,14 @@ class Seat(BotPlugin):
             self.start_poller(900, self._poller_transactions_check)
         if self.config['CHECK_CONTRACTS']:
             self.start_poller(900, self._poller_contracts_check)
+        if self.config['CHECK_INDUSTRY']:
+            self.start_poller(900, self._poller_industry_check)
         if 'last_trade_id' not in self:
             self['last_trade_id'] = 1
         if 'last_contract_id' not in self:
             self['last_contract_id'] = 1
+        if 'last_job_id' not in self:
+            self['last_job_id'] = 1
 
         self.redis = redis.StrictRedis(host='localhost', port=6379, db=9)
 
@@ -39,12 +44,22 @@ class Seat(BotPlugin):
             'CHECK_STRUCTURES': True,
             'CHECK_TRADES': True,
             'CHECK_CONTRACTS': True,
-            'TRADECORP_ID': '<corpid>',
+            'CHECK_INDUSTRY': True,
+            'CORP_ID': '<corpid>',
             'REPORT_POS_CHAN': '<channel>',
             'REPORT_REINF_CHAN': '<channel>',
             'REPORT_TRADES_CHAN': '<channel>',
+            'REPORT_INDUSTRY_CHAN': '<channel>',
             'REPORT_CONTRACTS_CHAN': '<channel>'
         }
+
+    ####################################################################################################################
+    # Helper
+    def strfdelta(self, tdelta, fmt):
+        d = {"days": tdelta.days}
+        d["hours"], rem = divmod(tdelta.seconds, 3600)
+        d["minutes"], d["seconds"] = divmod(rem, 60)
+        return fmt.format(**d)
 
     ####################################################################################################################
     # ESI api Calls
@@ -58,7 +73,20 @@ class Seat(BotPlugin):
     def get_pilot(self, id):
         try:
             r = requests.get(
-                'https://esi.tech.ccp.is/latest/characters/{}'.format(str(id)))
+                'https://esi.evetech.net/latest/characters/{}'.format(str(id)))
+            r.raise_for_status()
+            value = r.json()['name']
+            return self.get_or_set(str(id), value)
+
+        except requests.exceptions.RequestException as e:
+            self.logger.info(
+                'Got a connection reset error from esi interface: {}'.format(e))
+            return 'unknown'
+
+    def get_item(self, id):
+        try:
+            r = requests.get(
+                'https://esi.evetech.net/latest/universe/types/{}'.format(str(id)))
             r.raise_for_status()
             value = r.json()['name']
             return self.get_or_set(str(id), value)
@@ -71,7 +99,7 @@ class Seat(BotPlugin):
     def get_corporation(self, id):
         try:
             r = requests.get(
-                'https://esi.tech.ccp.is/latest/corporations/{}'.format(str(id)))
+                'https://esi.evetech.net/latest/corporations/{}'.format(str(id)))
             r.raise_for_status()
             value = r.json()['name']
             return self.get_or_set(str(id), value)
@@ -84,7 +112,7 @@ class Seat(BotPlugin):
     def get_alliance(self, id):
         try:
             r = requests.get(
-                'https://esi.tech.ccp.is/latest/alliances/{}'.format(str(id)))
+                'https://esi.evetech.net/latest/alliances/{}'.format(str(id)))
             r.raise_for_status()
             value = r.json()['name']
             return self.get_or_set(str(id), value)
@@ -97,7 +125,7 @@ class Seat(BotPlugin):
     def get_station_name(self, id):
         try:
             r = requests.get(
-                'https://esi.tech.ccp.is/latest/universe/stations/{}'.format(str(id)))
+                'https://esi.evetech.net/latest/universe/stations/{}'.format(str(id)))
             r.raise_for_status()
             value = r.json()['name']
             return self.get_or_set(str(id), value)
@@ -105,7 +133,7 @@ class Seat(BotPlugin):
         except requests.exceptions.RequestException as e:
             self.logger.info(
                 'Got a connection reset error from esi interface: {}'.format(e))
-            return 'unknown'
+            return 'unknown Station'
 
     ####################################################################################################################
     # Seat Api Calls
@@ -141,14 +169,36 @@ class Seat(BotPlugin):
     def get_transactions(self, corpid):
         url = self.config['SEAT_URL'] + \
             "/corporation/wallet-transactions/" + str(corpid)
-        lastPage = self.api_call(url)['links']['last']
-        return self.api_call(lastPage)
+        # get 3 last pages for buying sprees
+        allItems = []
+        totalPages = self.api_call(url)['meta']['last_page']
+        startPage = totalPages-3 if not totalPages < 4 else 0
+        for i in range(startPage, totalPages):
+            items = self.api_call(url + '?page=' + str(i))['data']
+            allItems += items
+        return allItems
 
     def get_contracts(self, corpid):
         url = self.config['SEAT_URL'] + \
             "/corporation/contracts/" + str(corpid)
-        lastPage = self.api_call(url)['links']['last']
-        return self.api_call(lastPage)
+        allContracts = []
+        totalPages = self.api_call(url)['meta']['last_page']
+        startPage = totalPages-3 if not totalPages < 4 else 0
+        for i in range(startPage, totalPages):
+            contracts = self.api_call(url + '?page=' + str(i))['data']
+            allContracts += contracts
+        return allContracts
+
+    def get_industry(self, corpid):
+        url = self.config['SEAT_URL'] + \
+            "/corporation/industry/" + str(corpid)
+        allJobs = []
+        totalPages = self.api_call(url)['meta']['last_page']
+        startPage = totalPages-3 if not totalPages < 4 else 0
+        for i in range(startPage, totalPages):
+            jobs = self.api_call(url + '?page=' + str(i))['data']
+            allJobs += jobs
+        return allJobs
 
     ####################################################################################################################
     # Reporting states
@@ -213,8 +263,8 @@ class Seat(BotPlugin):
     # poller
 
     def _poller_transactions_check(self):
-        lastTransactions = self.get_transactions(self.config['TRADECORP_ID'])
-        for transaction in lastTransactions['data']:
+        lastTransactions = self.get_transactions(self.config['CORP_ID'])
+        for transaction in lastTransactions:
             if self['last_trade_id'] < transaction['transaction_id']:
                 self['last_trade_id'] = transaction['transaction_id']
                 quantity = transaction['quantity']
@@ -228,8 +278,8 @@ class Seat(BotPlugin):
                               action, quantity, typeName, price, priceTotal))
 
     def _poller_contracts_check(self):
-        lastContracts = self.get_contracts(self.config['TRADECORP_ID'])
-        for contract in lastContracts['data']:
+        contracts = self.get_contracts(self.config['CORP_ID'])
+        for contract in contracts:
             if contract['detail']['type'] == 'courier':
                 # cast some vars
                 apiStatus = contract['detail']['status']
@@ -242,21 +292,47 @@ class Seat(BotPlugin):
                     contract['detail']['start_location_id'])
                 destination = self.get_station_name(
                     contract['detail']['end_location_id'])
-
                 # check for updates
-                selfStatus = self.get_or_set(
-                    contractID, contract['detail']['status'])
+                selfStatus = self.get_or_set(contractID, apiStatus)
                 if selfStatus != apiStatus:
                     self.send(self.build_identifier(self.config['REPORT_CONTRACTS_CHAN']),
                               ":airplane: Update: {} --> {} from {} to {}".format(
                                   source, destination, selfStatus, apiStatus))
-
                 # check for new
                 if self['last_contract_id'] < contract['contract_id']:
                     self['last_contract_id'] = contract['contract_id']
                     self.send(self.build_identifier(self.config['REPORT_CONTRACTS_CHAN']),
                               ":airplane: New: {} - -> {} | {} volume  {} reward  {} collateral".format(
                                   source, destination, volume, reward, collateral))
+
+    def _poller_industry_check(self):
+        jobs = self.get_industry(self.config['CORP_ID'])
+        for job in jobs:
+            # cast some vars
+            jobID = job['job_id']
+            installer = self.get_pilot(job['installer_id'])
+            apiStatus = job['status']
+            location = self.get_station_name(job['facility_id'])
+            typeName = self.get_item(job['blueprint_type_id'])
+            endDate = job['end_date']
+            d0 = datetime.datetime.strptime(
+                job['end_date'], '%Y-%m-%d %H:%M:%S')
+            d1 = datetime.datetime.utcnow()
+            delta = d0 - d1
+            timeLeft = self.strfdelta(delta, "{days}d {hours}h {minutes}m")
+            # check for updates
+            selfStatus = self.get_or_set(jobID, apiStatus)
+            if selfStatus != apiStatus:
+                self.send(self.build_identifier(self.config['REPORT_INDUSTRY_CHAN']),
+                          ":factory: Update: {} in {} by {} {} --> {}".format(
+                    typeName, location, installer, selfStatus, apiStatus))
+
+            # check for new
+            if self['last_job_id'] < job['job_id']:
+                self['last_job_id'] = job['job_id']
+                self.send(self.build_identifier(self.config['REPORT_INDUSTRY_CHAN']),
+                          ":factory: New: {} by {} in {} ends {} timeleft {}".format(
+                    typeName, installer, location, endDate, timeLeft))
 
     def _poller_pos_check(self):
         for corp in self.get_corps():
@@ -326,6 +402,25 @@ class Seat(BotPlugin):
 
     ####################################################################################################################
     # bot commands
+
+    @botcmd
+    def jobs_all(self, msg, args):
+        """Prints out all industry jobs"""
+        if args != '':
+            yield 'Usage: !jobs all'
+        for job in self.get_industry(self.config['CORP_ID']):
+            # cast some vars
+            installer = self.get_pilot(job['installer_id'])
+            location = self.get_station_name(job['facility_id'])
+            typeName = self.get_item(job['blueprint_type_id'])
+            endDate = job['end_date']
+            d0 = datetime.datetime.strptime(
+                job['end_date'], '%Y-%m-%d %H:%M:%S')
+            d1 = datetime.datetime.utcnow()
+            delta = d0 - d1
+            timeLeft = self.strfdelta(delta, "{days}d {hours}h {minutes}m")
+            yield ":factory: {} in {} by {}, ends on {}, timeleft: {}".format(
+                typeName, location, installer, endDate, timeLeft)
 
     @botcmd
     def pos_find(self, msg, args):
@@ -444,9 +539,13 @@ class Seat(BotPlugin):
         self._poller_pos_check()
 
     @botcmd(admin_only=True, hidden=True)
-    def trigger_trades_(self, msg, args):
+    def trigger_trades(self, msg, args):
         self._poller_transactions_check()
 
     @botcmd(admin_only=True, hidden=True)
-    def trigger_contracts_(self, msg, args):
+    def trigger_industry(self, msg, args):
+        self._poller_industry_check()
+
+    @botcmd(admin_only=True, hidden=True)
+    def trigger_contracts(self, msg, args):
         self._poller_contracts_check()
