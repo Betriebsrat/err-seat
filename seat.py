@@ -172,7 +172,7 @@ class Seat(BotPlugin):
         # get 3 last pages for buying sprees
         allItems = []
         totalPages = self.api_call(url)['meta']['last_page']
-        startPage = totalPages-3 if not totalPages < 4 else 0
+        startPage = totalPages - 3 if not totalPages < 4 else 0
         for i in range(startPage, totalPages):
             items = self.api_call(url + '?page=' + str(i))['data']
             allItems += items
@@ -183,7 +183,7 @@ class Seat(BotPlugin):
             "/corporation/contracts/" + str(corpid)
         allContracts = []
         totalPages = self.api_call(url)['meta']['last_page']
-        startPage = totalPages-3 if not totalPages < 4 else 0
+        startPage = totalPages - 3 if not totalPages < 4 else 0
         for i in range(startPage, totalPages):
             contracts = self.api_call(url + '?page=' + str(i))['data']
             allContracts += contracts
@@ -194,7 +194,7 @@ class Seat(BotPlugin):
             "/corporation/industry/" + str(corpid)
         allJobs = []
         totalPages = self.api_call(url)['meta']['last_page']
-        startPage = totalPages-3 if not totalPages < 4 else 0
+        startPage = totalPages - 3 if not totalPages < 4 else 0
         for i in range(startPage, totalPages):
             jobs = self.api_call(url + '?page=' + str(i))['data']
             allJobs += jobs
@@ -272,7 +272,7 @@ class Seat(BotPlugin):
                 action = "Sold" if transaction['is_buy'] == 0 else "Bought"
                 price = '{:,.2f}'.format(transaction['unit_price'])
                 priceTotal = '{:,.2f}'.format(
-                    quantity*transaction['unit_price'])
+                    quantity * transaction['unit_price'])
                 self.send(self.build_identifier(self.config['REPORT_TRADES_CHAN']),
                           ":moneybag: {} {}x {} at {}. Total: {}".format(
                               action, quantity, typeName, price, priceTotal))
@@ -293,14 +293,16 @@ class Seat(BotPlugin):
                 destination = self.get_station_name(
                     contract['detail']['end_location_id'])
                 # check for updates
-                selfStatus = self.get_or_set(contractID, apiStatus)
+                selfStatus = self.redis.get(contractID).decode('utf-8')
                 if selfStatus != apiStatus:
+                    self.redis.set(contractID, apiStatus)
                     self.send(self.build_identifier(self.config['REPORT_CONTRACTS_CHAN']),
                               ":airplane: Update: {} --> {} from {} to {}".format(
                                   source, destination, selfStatus, apiStatus))
                 # check for new
                 if self['last_contract_id'] < contract['contract_id']:
                     self['last_contract_id'] = contract['contract_id']
+                    self.redis.set(contractID, apiStatus)
                     self.send(self.build_identifier(self.config['REPORT_CONTRACTS_CHAN']),
                               ":airplane: New: {} - -> {} | {} volume  {} reward  {} collateral".format(
                                   source, destination, volume, reward, collateral))
@@ -321,18 +323,20 @@ class Seat(BotPlugin):
             delta = d0 - d1
             timeLeft = self.strfdelta(delta, "{days}d {hours}h {minutes}m")
             # check for updates
-            selfStatus = self.get_or_set(jobID, apiStatus)
+            selfStatus = self.redis.get(jobID).decode('utf-8')
             if selfStatus != apiStatus:
+                self.redis.set(jobID, apiStatus)
                 self.send(self.build_identifier(self.config['REPORT_INDUSTRY_CHAN']),
                           ":factory: Update: {} in {} by {} {} --> {}".format(
-                    typeName, location, installer, selfStatus, apiStatus))
+                              typeName, location, installer, selfStatus, apiStatus))
 
             # check for new
             if self['last_job_id'] < job['job_id']:
                 self['last_job_id'] = job['job_id']
+                self.redis.set(jobID, apiStatus)
                 self.send(self.build_identifier(self.config['REPORT_INDUSTRY_CHAN']),
                           ":factory: New: {} by {} in {} ends {} timeleft {}".format(
-                    typeName, installer, location, endDate, timeLeft))
+                              typeName, installer, location, endDate, timeLeft))
 
     def _poller_pos_check(self):
         for corp in self.get_corps():
