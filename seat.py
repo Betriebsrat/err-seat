@@ -293,12 +293,13 @@ class Seat(BotPlugin):
                 destination = self.get_station_name(
                     contract['detail']['end_location_id'])
                 # check for updates
-                selfStatus = self.redis.get(contractID).decode('utf-8')
-                if selfStatus != apiStatus:
-                    self.redis.set(contractID, apiStatus)
-                    self.send(self.build_identifier(self.config['REPORT_CONTRACTS_CHAN']),
-                              ":airplane: Update: {} --> {} from {} to {}".format(
-                                  source, destination, selfStatus, apiStatus))
+                if self.redis.get(contractID):
+                    selfStatus = self.redis.get(contractID).decode('utf-8')
+                    if selfStatus != apiStatus:
+                        self.redis.set(contractID, apiStatus)
+                        self.send(self.build_identifier(self.config['REPORT_CONTRACTS_CHAN']),
+                                  ":airplane: Update: {} --> {} from {} to {}".format(
+                            source, destination, selfStatus, apiStatus))
                 # check for new
                 if self['last_contract_id'] < contract['contract_id']:
                     self['last_contract_id'] = contract['contract_id']
@@ -323,12 +324,13 @@ class Seat(BotPlugin):
             delta = d0 - d1
             timeLeft = self.strfdelta(delta, "{days}d {hours}h {minutes}m")
             # check for updates
-            selfStatus = self.redis.get(jobID).decode('utf-8')
-            if selfStatus != apiStatus:
-                self.redis.set(jobID, apiStatus)
-                self.send(self.build_identifier(self.config['REPORT_INDUSTRY_CHAN']),
-                          ":factory: Update: {} in {} by {} {} --> {}".format(
-                              typeName, location, installer, selfStatus, apiStatus))
+            if self.redis.get(jobID):
+                selfStatus = self.redis.get(jobID).decode('utf-8')
+                if selfStatus != apiStatus:
+                    self.redis.set(jobID, apiStatus)
+                    self.send(self.build_identifier(self.config['REPORT_INDUSTRY_CHAN']),
+                              ":factory: Update: {} in {} by {} {} --> {}".format(
+                        typeName, location, installer, selfStatus, apiStatus))
 
             # check for new
             if self['last_job_id'] < job['job_id']:
