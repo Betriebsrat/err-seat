@@ -555,3 +555,14 @@ class Seat(BotPlugin):
     @botcmd(admin_only=True, hidden=True)
     def trigger_contracts(self, msg, args):
         self._poller_contracts_check()
+
+    @botcmd(admin_only=True, hidden=True)
+    def debug_clearids(self, msg, args):
+        for item in self:
+            del self[item]
+        return 'All IDs have been cleared'
+
+    @botcmd(admin_only=True, hidden=True)
+    def debug_giveids(self, msg, args):
+        return 'Last TradeID: {}, Last ContractID: {}, Last IndustryID: {}'.format(
+            self['last_trade_id'], self['last_contract_id'], self['last_job_id'])
