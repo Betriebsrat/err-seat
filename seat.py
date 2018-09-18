@@ -163,39 +163,39 @@ class Seat(BotPlugin):
 
     def get_pos_contents(self, corpid, posid):
         url = self.config['SEAT_URL'] + \
-            "/corporation/starbases/" + str(corpid) + "/" + str(posid)
+              "/corporation/starbases/" + str(corpid) + "/" + str(posid)
         return self.api_call(url)
 
     def get_transactions(self, corpid):
         url = self.config['SEAT_URL'] + \
-            "/corporation/wallet-transactions/" + str(corpid)
+              "/corporation/wallet-transactions/" + str(corpid)
         # get 3 last pages for buying sprees
         allItems = []
         totalPages = self.api_call(url)['meta']['last_page']
         startPage = totalPages - 3 if not totalPages < 4 else 0
-        for i in range(startPage, totalPages):
+        for i in range(startPage, totalPages + 1):
             items = self.api_call(url + '?page=' + str(i))['data']
             allItems += items
         return allItems
 
     def get_contracts(self, corpid):
         url = self.config['SEAT_URL'] + \
-            "/corporation/contracts/" + str(corpid)
+              "/corporation/contracts/" + str(corpid)
         allContracts = []
         totalPages = self.api_call(url)['meta']['last_page']
         startPage = totalPages - 3 if not totalPages < 4 else 0
-        for i in range(startPage, totalPages):
+        for i in range(startPage, totalPages + 1):
             contracts = self.api_call(url + '?page=' + str(i))['data']
             allContracts += contracts
         return allContracts
 
     def get_industry(self, corpid):
         url = self.config['SEAT_URL'] + \
-            "/corporation/industry/" + str(corpid)
+              "/corporation/industry/" + str(corpid)
         allJobs = []
         totalPages = self.api_call(url)['meta']['last_page']
         startPage = totalPages - 3 if not totalPages < 4 else 0
-        for i in range(startPage, totalPages):
+        for i in range(startPage, totalPages + 1):
             jobs = self.api_call(url + '?page=' + str(i))['data']
             allJobs += jobs
         return allJobs
@@ -299,7 +299,7 @@ class Seat(BotPlugin):
                         self.redis.set(contractID, apiStatus)
                         self.send(self.build_identifier(self.config['REPORT_CONTRACTS_CHAN']),
                                   ":airplane: Update: {} --> {} from {} to {}".format(
-                            source, destination, selfStatus, apiStatus))
+                                      source, destination, selfStatus, apiStatus))
                 # check for new
                 if self['last_contract_id'] < contract['contract_id']:
                     self['last_contract_id'] = contract['contract_id']
@@ -330,7 +330,7 @@ class Seat(BotPlugin):
                     self.redis.set(jobID, apiStatus)
                     self.send(self.build_identifier(self.config['REPORT_INDUSTRY_CHAN']),
                               ":factory: Update: {} in {} by {} {} --> {}".format(
-                        typeName, location, installer, selfStatus, apiStatus))
+                                  typeName, location, installer, selfStatus, apiStatus))
 
             # check for new
             if self['last_job_id'] < job['job_id']:
