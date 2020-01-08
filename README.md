@@ -7,7 +7,7 @@ Announcement of corp sales.
 
 ## Warning
 
-The whole POS and POCO Code is not tested against seat 3.0 api version 2.0. Feel free to fork and do a pull request if you are using that. 
+This is horribly outdated due me no longer playing and ccp reworking pos code. Don't use this without updating the code.
 
 ## Installation
 
